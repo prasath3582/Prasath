@@ -1,0 +1,361 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hari Riding Bro | TVS 50 Rider</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101a19;color:white;font-family:Arial,sans-serif}
+header{text-align:center;padding:16px 8px;background:#132b24;border-bottom:3px solid #f8bd35}
+header h1{margin:0;color:#ffca42;font-size:clamp(25px,5vw,40px)}
+header p{margin:7px 0 0;color:#d8e6d7;font-size:13px}
+.game{max-width:800px;margin:15px auto;padding:0 10px}
+.hud{display:flex;justify-content:space-between;gap:8px;margin-bottom:9px}
+.stat{background:#23342e;border:1px solid #52675a;border-radius:10px;padding:10px 12px;flex:1;text-align:center}
+.stat small{display:block;color:#b6c9b9;font-size:11px}
+.stat strong{display:block;color:#ffcf4c;font-size:20px;margin-top:4px}
+.stage{position:relative;overflow:hidden;border:3px solid #758b70;border-radius:12px;background:#6eac55}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#07120bc9;padding:20px;text-align:center}
+.panel{max-width:340px;width:100%;padding:24px 18px;background:#1a3026;border:2px solid #f6c449;border-radius:18px}
+.panel h2{color:#ffce4b;margin:0 0 12px;font-size:28px}
+.panel p{color:#e1e8df;line-height:1.5;font-size:14px}
+button{cursor:pointer;border:0;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:bold}
+.start{background:#ffca42;color:#1b281c;width:100%;margin-top:8px}
+.controls{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}
+.pad{display:flex;gap:10px}
+.ctrl{background:#293d32;color:white;border:1px solid #829783;min-width:70px;min-height:56px;font-size:24px;touch-action:none;user-select:none}
+.ctrl:active{background:#e8b735;color:#17231b}
+.hint{font-size:12px;color:#c7d6c8;text-align:center;line-height:1.6;margin:12px 0}
+footer{text-align:center;color:#91a798;font-size:12px;padding:15px}
+@media(max-width:420px){.stat{padding:8px 4px}.stat strong{font-size:17px}.ctrl{min-width:62px;min-height:54px}.game{padding:0 7px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏍️ HARI RIDING BRO</h1>
+  <p>TVS 50 RIDER • INDIAN ROAD CHALLENGE</p>
+</header>
+
+<main class="game">
+  <div class="hud">
+    <div class="stat"><small>SCORE</small><strong id="score">0</strong></div>
+    <div class="stat"><small>SPEED</small><strong><span id="speed">0</span> km/h</strong></div>
+    <div class="stat"><small>BEST</small><strong id="best">0</strong></div>
+  </div>
+
+  <div class="stage">
+    <canvas id="game" width="600" height="760"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="panel">
+        <h2 id="message">HARI RIDING BRO</h2>
+        <p id="description">Start your TVS 50 and ride through Indian village roads! Dodge traffic, avoid obstacles and beat your best score.</p>
+        <p>⬅️ Left &nbsp; ➡️ Right<br>⬆️ Accelerate &nbsp; ⬇️ Brake</p>
+        <button class="start" id="start">START RIDING 🛵</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="pad">
+      <button class="ctrl" id="left" aria-label="Steer left">◀</button>
+      <button class="ctrl" id="right" aria-label="Steer right">▶</button>
+    </div>
+    <div class="pad">
+      <button class="ctrl" id="brake" aria-label="Brake">▼</button>
+      <button class="ctrl" id="gas" aria-label="Accelerate">▲</button>
+    </div>
+  </div>
+  <p class="hint">KEYBOARD: Arrow keys or WASD<br>Mobile: Hold the buttons to ride</p>
+</main>
+<footer>HARI RIDING BRO • Made for the love of riding ❤️</footer>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const $ = id => document.getElementById(id);
+
+let W=600,H=760;
+let running=false,frame=0,score=0,speed=0,best=0;
+let playerX=300,roadOffset=0,objects=[],particles=[];
+let keys={};
+let lastTime=0,spawnTimer=0;
+
+try{best=Number(localStorage.getItem("hariBest"))||0}catch(e){}
+$("best").textContent=best;
+
+const roadWidth=350;
+function roadEdges(){return [(W-roadWidth)/2,(W+roadWidth)/2]}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function rand(a,b){return Math.random()*(b-a)+a}
+
+function rounded(x,y,w,h,r,color){
+ ctx.fillStyle=color;ctx.beginPath();
+ ctx.roundRect(x,y,w,h,r);ctx.fill();
+}
+
+function drawTree(x,y,s){
+ ctx.fillStyle="#64452b";ctx.fillRect(x-4*s,y,8*s,24*s);
+ ctx.fillStyle="#286b36";ctx.beginPath();
+ ctx.arc(x,y-5*s,17*s,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#438b42";ctx.beginPath();
+ ctx.arc(x-8*s,y-12*s,10*s,0,Math.PI*2);ctx.fill();
+}
+
+function drawRoad(){
+ // Grass
+ ctx.fillStyle="#72ad51";ctx.fillRect(0,0,W,H);
+ // Village fields
+ for(let y=-30+(roadOffset%90);y<H;y+=90){
+   ctx.fillStyle="#83bd5b";
+   ctx.fillRect(0,y,120,35);
+   ctx.fillStyle="#61994b";
+   ctx.fillRect(470,y+20,130,30);
+ }
+ // Road
+ const [L,R]=roadEdges();
+ ctx.fillStyle="#b5a58a";
+ ctx.fillRect(L-12,0,roadWidth+24,H);
+ ctx.fillStyle="#414748";
+ ctx.fillRect(L,0,roadWidth,H);
+ // Roadside edge lines
+ ctx.fillStyle="#f6e5b8";
+ ctx.fillRect(L+5,0,4,H);
+ ctx.fillRect(R-9,0,4,H);
+ // Moving centre dashes
+ ctx.fillStyle="#f5f0d8";
+ for(let y=-80+(roadOffset%110);y<H;y+=110){
+   ctx.fillRect(W/2-4,y,8,55);
+ }
+ // Roadside posts
+ for(let y=-40+(roadOffset%150);y<H;y+=150){
+   ctx.fillStyle="#eee4cf";
+   ctx.fillRect(L-20,y,8,28);
+   ctx.fillStyle="#e95442";
+   ctx.fillRect(L-20,y,8,8);
+   ctx.fillStyle="#eee4cf";
+   ctx.fillRect(R+12,y,8,28);
+   ctx.fillStyle="#e95442";
+   ctx.fillRect(R+12,y,8,8);
+ }
+ // Trees and huts
+ for(let y=-30+(roadOffset%190);y<H;y+=190){
+   drawTree(28,y+20,1);
+   drawTree(90,y+75,.75);
+   drawTree(555,y+70,.9);
+   drawTree(510,y+145,.7);
+   if(y%380<100){
+     ctx.fillStyle="#b97b43";
+     ctx.fillRect(113,y+45,36,30);
+     ctx.fillStyle="#75422c";
+     ctx.beginPath();
+     ctx.moveTo(106,y+45);ctx.lineTo(131,y+24);
+     ctx.lineTo(156,y+45);ctx.fill();
+   }
+ }
+}
+
+function drawBike(x,y,scale=1){
+ ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+ // Shadow
+ ctx.fillStyle="#1118";
+ ctx.beginPath();ctx.ellipse(0,4,27,42,0,0,Math.PI*2);ctx.fill();
+ // Wheels
+ rounded(-10,-38,20,29,8,"#111719");
+ rounded(-10,12,20,29,8,"#111719");
+ ctx.strokeStyle="#abb7b5";ctx.lineWidth=2;
+ ctx.beginPath();ctx.ellipse(0,-24,6,10,0,0,Math.PI*2);ctx.stroke();
+ ctx.beginPath();ctx.ellipse(0,25,6,10,0,0,Math.PI*2);ctx.stroke();
+ // Classic moped frame
+ ctx.strokeStyle="#e4b72e";ctx.lineWidth=7;ctx.lineCap="round";
+ ctx.beginPath();ctx.moveTo(0,-25);ctx.lineTo(-15,-3);
+ ctx.lineTo(0,18);ctx.lineTo(0,28);ctx.stroke();
+ // Engine
+ rounded(-14,-3,28,24,5,"#aeb6ae");
+ ctx.fillStyle="#59645e";ctx.fillRect(-11,2,22,5);
+ // Mudguards
+ ctx.strokeStyle="#d8ded7";ctx.lineWidth=5;
+ ctx.beginPath();ctx.moveTo(-12,-34);ctx.quadraticCurveTo(0,-44,12,-34);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(-12,32);ctx.quadraticCurveTo(0,42,12,32);ctx.stroke();
+ // Fuel tank and seat
+ rounded(-14,-18,28,15,6,"#d83d32");
+ rounded(-13,-3,26,7,3,"#202a27");
+ // Headlight and handlebar
+ ctx.fillStyle="#f9e7a5";ctx.beginPath();ctx.arc(0,-37,6,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#d8d9d2";ctx.lineWidth=4;
+ ctx.beginPath();ctx.moveTo(-17,-35);ctx.lineTo(17,-35);ctx.stroke();
+ // Rider body
+ ctx.fillStyle="#1769a0";
+ ctx.beginPath();ctx.moveTo(-12,-17);ctx.lineTo(-14,-1);
+ ctx.lineTo(12,-1);ctx.lineTo(10,-17);ctx.fill();
+ // Arms
+ ctx.strokeStyle="#d69c70";ctx.lineWidth=5;
+ ctx.beginPath();ctx.moveTo(-10,-14);ctx.lineTo(-17,-29);
+ ctx.moveTo(10,-14);ctx.lineTo(17,-29);ctx.stroke();
+ // Helmet
+ ctx.fillStyle="#f6c83f";ctx.beginPath();
+ ctx.arc(0,-25,10,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#283b40";ctx.fillRect(1,-27,10,4);
+ ctx.restore();
+}
+
+function drawCar(o){
+ const x=o.x,y=o.y;
+ ctx.save();ctx.translate(x,y);
+ rounded(-22,-35,44,70,9,o.color);
+ rounded(-16,-23,32,19,4,"#b8d9dc");
+ rounded(-16,3,32,17,4,"#9fc7cd");
+ rounded(-27,-24,7,17,2,"#161b1d");
+ rounded(20,-24,7,17,2,"#161b1d");
+ rounded(-27,12,7,17,2,"#161b1d");
+ rounded(20,12,7,17,2,"#161b1d");
+ ctx.fillStyle="#fff2b3";
+ ctx.fillRect(-17,-34,9,5);ctx.fillRect(8,-34,9,5);
+ ctx.fillStyle="#e63e32";
+ ctx.fillRect(-17,28,9,4);ctx.fillRect(8,28,9,4);
+ ctx.restore();
+}
+
+function drawObstacle(o){
+ ctx.save();ctx.translate(o.x,o.y);
+ if(o.type==="cone"){
+   ctx.fillStyle="#f58a25";ctx.beginPath();
+   ctx.moveTo(0,-20);ctx.lineTo(-14,15);ctx.lineTo(14,15);ctx.fill();
+   ctx.fillStyle="white";ctx.fillRect(-9,1,18,5);
+   ctx.fillStyle="#d5d2c8";ctx.fillRect(-17,14,34,5);
+ }else{
+   rounded(-17,-17,34,34,5,"#d9b780");
+   ctx.strokeStyle="#8a5e32";ctx.lineWidth=3;
+   ctx.beginPath();ctx.moveTo(-10,-10);ctx.lineTo(10,10);
+   ctx.moveTo(10,-10);ctx.lineTo(-10,10);ctx.stroke();
+ }
+ ctx.restore();
+}
+
+function spawnObject(){
+ const [L,R]=roadEdges();
+ const lane=Math.floor(Math.random()*3);
+ const laneX=L+roadWidth*(lane+.5)/3;
+ const type=Math.random();
+ if(type<.65){
+   objects.push({x:laneX,y:-60,type:"car",
+    color:["#df5143","#e6d9a5","#5c9fc5","#d5d8ce"][Math.floor(Math.random()*4)],
+    speed:rand(.65,1.2)});
+ }else{
+   objects.push({x:laneX,y:-40,type:"obstacle",
+    shape:type<.82?"cone":"box",speed:1});
+ }
+}
+
+function reset(){
+ frame=0;score=0;speed=0;roadOffset=0;
+ playerX=W/2;objects=[];particles=[];spawnTimer=0;
+ running=true;
+ $("overlay").style.display="none";
+ lastTime=performance.now();
+ requestAnimationFrame(loop);
+}
+
+function endGame(){
+ running=false;
+ if(score>best){
+   best=score;
+   try{localStorage.setItem("hariBest",best)}catch(e){}
+ }
+ $("best").textContent=best;
+ $("message").textContent="RIDE OVER! 🛵";
+ $("description").textContent="Your score: "+Math.floor(score)+". Best score: "+best+". Ready for another ride, bro?";
+ $("start").textContent="RIDE AGAIN 🔄";
+ $("overlay").style.display="flex";
+}
+
+function update(dt){
+ frame+=dt;
+ speed+=(keys.ArrowUp||keys.w?45:keys.ArrowDown||keys.s?-85:-12)*dt;
+ speed=clamp(speed,0,150);
+ const moving=speed/150;
+ roadOffset=(roadOffset+speed*dt*1.3)%190;
+ const steer=(keys.ArrowRight||keys.d?1:0)-(keys.ArrowLeft||keys.a?1:0);
+ playerX+=steer*290*dt;
+ const [L,R]=roadEdges();
+ playerX=clamp(playerX,L+24,R-24);
+ score+=moving*dt*12;
+ spawnTimer+=dt;
+ if(spawnTimer>Math.max(.48,1.2-moving*.45)){
+   spawnTimer=0;spawnObject();
+ }
+ for(let i=objects.length-1;i>=0;i--){
+   const o=objects[i];
+   o.y+=(95+speed*1.65)*o.speed*dt;
+   if(Math.abs(o.x-playerX)<31&&Math.abs(o.y-625)<43){
+     endGame();return;
+   }
+   if(o.y>H+60)objects.splice(i,1);
+ }
+ $("score").textContent=Math.floor(score);
+ $("speed").textContent=Math.floor(speed);
+}
+
+function draw(){
+ drawRoad();
+ objects.forEach(o=>{
+   if(o.type==="car")drawCar(o);
+   else drawObstacle({x:o.x,y:o.y,type:o.shape});
+ });
+ // Player moped
+ drawBike(playerX,625,1.05);
+ // Speed indicator
+ ctx.fillStyle="#ffffffcc";ctx.font="bold 14px Arial";
+ ctx.fillText("TVS 50 • VILLAGE RIDE",15,28);
+ ctx.fillStyle="#17231d99";ctx.fillRect(14,42,112,8);
+ ctx.fillStyle="#ffcb3d";ctx.fillRect(14,42,112*speed/150,8);
+}
+
+function loop(now){
+ if(!running)return;
+ const dt=Math.min((now-lastTime)/1000,.04);
+ lastTime=now;
+ update(dt);
+ if(!running)return;
+ draw();
+ requestAnimationFrame(loop);
+}
+
+function idle(){
+ drawRoad();
+ drawBike(playerX,625,1.05);
+}
+idle();
+
+$("start").addEventListener("click",reset);
+
+document.addEventListener("keydown",e=>{
+ const k=e.key.length===1?e.key.toLowerCase():e.key;
+ if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key))e.preventDefault();
+ keys[k]=true;
+ if(!running&&e.key==="Enter")reset();
+});
+document.addEventListener("keyup",e=>{
+ const k=e.key.length===1?e.key.toLowerCase():e.key;
+ keys[k]=false;
+});
+window.addEventListener("blur",()=>{keys={}});
+
+function bindHold(id,key){
+ const el=$(id);
+ const down=e=>{e.preventDefault();keys[key]=true};
+ const up=e=>{e.preventDefault();keys[key]=false};
+ el.addEventListener("pointerdown",down);
+ el.addEventListener("pointerup",up);
+ el.addEventListener("pointercancel",up);
+ el.addEventListener("pointerleave",up);
+}
+bindHold("left","ArrowLeft");
+bindHold("right","ArrowRight");
+bindHold("gas","ArrowUp");
+bindHold("brake","ArrowDown");
+</script>
+</body>
+</html>
